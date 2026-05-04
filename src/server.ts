@@ -6,7 +6,7 @@ import { resolve } from './dataResolver';
 import { runComputed } from './computedRunner';
 import { render } from './renderer';
 import { toHtml } from './adapters/htmlAdapter';
-import { initBrowser, htmlToPdf, closeBrowser } from './adapters/pdfAdapter';
+// import { initBrowser, htmlToPdf, closeBrowser } from './adapters/pdfAdapter'; // PDF support disabled
 import { RenderRequest, ErrorResponse } from './types';
 
 const app = express();
@@ -54,9 +54,9 @@ app.post(
         .json({ error: 'templateId is required' } satisfies ErrorResponse);
     }
 
-    if (format !== 'html' && format !== 'pdf') {
+    if (format !== 'html') {
       return res.status(400).json({
-        error: `Invalid format "${format}". Allowed: "html", "pdf"`,
+        error: `Invalid format "${format}". Only "html" is supported.`,
       } satisfies ErrorResponse);
     }
 
@@ -95,18 +95,8 @@ app.post(
         template.config,
       );
 
-      // Step 4: Return in requested format
-      if (format === 'pdf') {
-        const pdfBuffer = await htmlToPdf(html);
-        res.set('Content-Type', 'application/pdf');
-        res.set(
-          'Content-Disposition',
-          `attachment; filename="${templateId}.pdf"`,
-        );
-        return res.send(pdfBuffer);
-      }
-
-      // HTML response
+      // Step 4: Return as HTML
+      // PDF rendering is disabled — handled by browser print dialog instead
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.send(toHtml(html));
     } catch (err: unknown) {
@@ -161,8 +151,7 @@ app.get('/template-service/health', (_req: Request, res: Response) => {
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 async function start(): Promise<void> {
-  // Start Chromium before the server accepts requests
-  await initBrowser();
+  // await initBrowser(); // PDF support disabled
 
   app.listen(PORT, () => {
     console.log(`[Server] Bahmni Template Service listening on port ${PORT}`);

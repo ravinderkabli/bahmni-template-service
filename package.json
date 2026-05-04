@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev": "node --env-file=.env -e \"require('child_process').spawnSync('node', ['node_modules/.bin/ts-node-dev', '--respawn', '--transpile-only', 'src/server.ts'], {stdio: 'inherit', env: process.env})\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch"
   },
