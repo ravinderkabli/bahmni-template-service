@@ -150,4 +150,42 @@ describe('resolve', () => {
       resolve(dataConfig, { patientUuid: 'abc' }, undefined, {}),
     ).rejects.toThrow('session expired');
   });
+
+  it('passes a timeout to axios.get for fetched sources', async () => {
+    const dataConfig = {
+      sources: {
+        patient: {
+          api: 'fhir' as const,
+          resource: 'Patient',
+          params: { id: '{{patientUuid}}' },
+        },
+      },
+    };
+    await resolve(dataConfig, { patientUuid: 'abc' }, undefined, {});
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
+  });
+
+  it('maps ECONNABORTED (axios timeout) to a timeout error', async () => {
+    axios.isAxiosError.mockReturnValue(true);
+    axios.get.mockRejectedValue({
+      isAxiosError: true,
+      code: 'ECONNABORTED',
+      message: 'timeout exceeded',
+    });
+    const dataConfig = {
+      sources: {
+        patient: {
+          api: 'fhir' as const,
+          resource: 'Patient',
+          params: { id: '{{patientUuid}}' },
+        },
+      },
+    };
+    await expect(
+      resolve(dataConfig, { patientUuid: 'abc' }, undefined, {}),
+    ).rejects.toThrow('OpenMRS API timeout');
+  });
 });

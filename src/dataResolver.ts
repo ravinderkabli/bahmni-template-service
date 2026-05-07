@@ -6,6 +6,18 @@ import { DataConfig, DataSource, ResolvedSources } from './types';
 const OPENMRS_URL = process.env.OPENMRS_URL ?? 'http://openmrs:8080';
 const FHIR_BASE = `${OPENMRS_URL}/openmrs/ws/fhir2/R4`;
 const REST_BASE = `${OPENMRS_URL}/openmrs/ws/rest/v1`;
+const REQUEST_TIMEOUT_MS = parseInt(process.env.OPENMRS_TIMEOUT_MS ?? '10000', 10);
+
+function summarizeResponse(body: unknown): string {
+  if (body == null || typeof body !== 'object') return String(body);
+  const obj = body as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof obj.resourceType === 'string') parts.push(`resourceType=${obj.resourceType}`);
+  if (Array.isArray(obj.entry)) parts.push(`entry=${obj.entry.length}`);
+  if (Array.isArray(obj.results)) parts.push(`results=${obj.results.length}`);
+  if (typeof obj.id === 'string') parts.push(`id=${obj.id}`);
+  return parts.length > 0 ? `{${parts.join(', ')}}` : `(${typeof body})`;
+}
 
 interface AuthHeaders {
   cookie?: string;
@@ -84,8 +96,8 @@ async function fetchSources(
       const url = buildUrl(source, context);
       console.log(`[DataResolver] Fetching ${sourceName}: ${url}`);
       try {
-        const response = await axios.get(url, { headers });
-        console.log(`[DataResolver] ${sourceName} response:`, JSON.stringify(response.data).slice(0, 300));
+        const response = await axios.get(url, { headers, timeout: REQUEST_TIMEOUT_MS });
+        console.log(`[DataResolver] ${sourceName} ${response.status} ${summarizeResponse(response.data)}`);
         return [sourceName, response.data] as [string, unknown];
       } catch (err) {
         if (axios.isAxiosError(err)) {
@@ -101,7 +113,13 @@ async function fetchSources(
           if (status === 404) {
             throw new Error(`OpenMRS resource not found for source: ${sourceName}`);
           }
+          // Timeout / DNS / connection refused — no response received
           if (!err.response) {
+            if (err.code === 'ECONNABORTED') {
+              throw new Error(
+                `OpenMRS API timeout (>${REQUEST_TIMEOUT_MS}ms) when fetching source: ${sourceName}`,
+              );
+            }
             throw new Error(
               `OpenMRS API unreachable when fetching source: ${sourceName}`,
             );

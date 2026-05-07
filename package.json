@@ -16,7 +16,6 @@
     "express": "^4.19.2",
     "fhirpath": "^3.13.0",
     "nunjucks": "^3.2.4",
-    "puppeteer-core": "^22.12.1",
     "qrcode-svg": "^1.1.0"
   },
   "devDependencies": {

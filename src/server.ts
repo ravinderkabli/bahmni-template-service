@@ -7,13 +7,28 @@ import { runComputed } from './computedRunner';
 import { runComputeScript } from './computeScriptRunner';
 import { render } from './renderer';
 import { toHtml } from './adapters/htmlAdapter';
-// import { initBrowser, htmlToPdf, closeBrowser } from './adapters/pdfAdapter'; // PDF support disabled
 import { RenderRequest, ErrorResponse } from './types';
 
 const app = express();
 
 // Parse JSON request bodies up to 10MB (for passthrough/hybrid mode with large data)
 app.use(express.json({ limit: '10mb' }));
+
+const DEBUG = (process.env.LOG_LEVEL ?? '').toLowerCase() === 'debug';
+
+interface AuthHeaders {
+  cookie?: string;
+  sessionId?: string;
+  authorization?: string;
+}
+
+function buildAuthHeaders(req: Request): AuthHeaders {
+  return {
+    cookie: req.headers.cookie,
+    sessionId: req.headers['x-openmrs-session-id'] as string | undefined,
+    authorization: req.headers['x-openmrs-authorization'] as string | undefined,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // GET /template-service/api/templates
@@ -26,7 +41,7 @@ app.get(
     const templates = templateStore.list().map((t) => ({
       id: t.id,
       name: t.name,
-      category:t.category,
+      category: t.category,
       triggers: t.triggers,
       outputFormats: t.outputFormats,
     }));
@@ -49,15 +64,14 @@ app.post(
       data,
     } = req.body as RenderRequest;
 
-    // Log incoming session credentials for debugging
-    const authHeader = req.headers['x-openmrs-authorization'] as string | undefined;
-    console.log('[Server] Incoming session headers:', {
-      cookie: req.headers.cookie ?? '(none)',
-      'x-openmrs-session-id': req.headers['x-openmrs-session-id'] ?? '(none)',
-      'x-openmrs-authorization': authHeader
-        ? `${authHeader.split(' ')[0]} (present)`
-        : '(none)',
-    });
+    if (DEBUG) {
+      const authHeader = req.headers['x-openmrs-authorization'] as string | undefined;
+      console.log('[Server] Incoming session headers:', {
+        cookie: req.headers.cookie ? '(present)' : '(none)',
+        'x-openmrs-session-id': req.headers['x-openmrs-session-id'] ? '(present)' : '(none)',
+        'x-openmrs-authorization': authHeader ? `${authHeader.split(' ')[0]} (present)` : '(none)',
+      });
+    }
 
     // --- Validate required fields ---
     if (!templateId) {
@@ -87,35 +101,27 @@ app.post(
     }
 
     try {
-      console.log('[Server] Template loaded:', { id: template.id, computeScriptPath: template.computeScriptPath, sources: Object.keys(template.dataConfig.sources ?? {}), context });
+      console.log('[Server] Render', {
+        id: template.id,
+        hasComputeScript: !!template.computeScriptPath,
+        sources: Object.keys(template.dataConfig.sources ?? {}),
+      });
+
+      const auth = buildAuthHeaders(req);
 
       // Step 1: Resolve data sources (passthrough / fetch / hybrid)
-      const sources = await resolve(
-        template.dataConfig,
-        context,
-        data,
-        {
-          cookie: req.headers.cookie,
-          sessionId: req.headers['x-openmrs-session-id'] as string | undefined,
-          authorization: req.headers['x-openmrs-authorization'] as string | undefined,
-        },
-      );
+      const sources = await resolve(template.dataConfig, context, data, auth);
 
       // Step 2: Run declarative computed fields
       const computed = runComputed(template.dataConfig.computed, sources);
 
       // Step 2b: Run compute.js if present in the template folder
-      const auth = {
-        cookie: req.headers.cookie,
-        sessionId: req.headers['x-openmrs-session-id'] as string | undefined,
-        authorization: req.headers['x-openmrs-authorization'] as string | undefined,
-      };
       const compute = template.computeScriptPath
         ? await runComputeScript(template.computeScriptPath, sources, context, auth)
         : {};
 
       // Step 3: Render Nunjucks template to HTML
-      const html = render(
+      const html = await render(
         template.templatePath,
         computed,
         compute,
@@ -124,8 +130,7 @@ app.post(
         template.config,
       );
 
-      // Step 4: Return as HTML
-      // PDF rendering is disabled — handled by browser print dialog instead
+      // Step 4: Return HTML (browser handles print dialog)
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.send(toHtml(html));
     } catch (err: unknown) {
@@ -145,7 +150,8 @@ app.post(
 
       if (
         message.includes('OpenMRS API unreachable') ||
-        message.includes('ECONNREFUSED')
+        message.includes('ECONNREFUSED') ||
+        message.includes('OpenMRS API timeout')
       ) {
         return res
           .status(502)
@@ -155,6 +161,12 @@ app.post(
       if (message.includes('session expired')) {
         return res
           .status(401)
+          .json({ error: message } satisfies ErrorResponse);
+      }
+
+      if (message.includes('OpenMRS resource not found')) {
+        return res
+          .status(404)
           .json({ error: message } satisfies ErrorResponse);
       }
 
@@ -180,8 +192,6 @@ app.get('/template-service/health', (_req: Request, res: Response) => {
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 async function start(): Promise<void> {
-  // await initBrowser(); // PDF support disabled
-
   app.listen(PORT, () => {
     console.log(`[Server] Bahmni Template Service listening on port ${PORT}`);
     console.log(

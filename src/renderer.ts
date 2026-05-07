@@ -8,18 +8,46 @@ import QRCodeSVG from 'qrcode-svg';
 import { computeAge } from './builtins/clinical';
 import { evaluateFhirPath } from './builtins/fhirPath';
 
-const TEMPLATES_DIR =
-  process.env.TEMPLATES_DIR ?? '/etc/bahmni_config/print-templates';
+function templatesDir(): string {
+  return process.env.TEMPLATES_DIR ?? '/etc/bahmni_config/print-templates';
+}
 
+interface TranslationCacheEntry {
+  mtimeMs: number;
+  value: Record<string, string>;
+}
+
+type BarcodeCallback = (err: Error | null, result: nunjucks.runtime.SafeString) => void;
+
+const translationCache = new Map<string, TranslationCacheEntry>();
+
+/**
+ * Loads (and caches) the translations file for a locale.
+ * Cache is invalidated when the file's mtime changes, so live edits to
+ * locale JSON files are picked up without restarting the service.
+ */
 function loadTranslations(locale: string): Record<string, string> {
-  const filePath = path.join(TEMPLATES_DIR, '_i18n', `${locale}.json`);
+  const filePath = path.join(templatesDir(), '_i18n', `${locale}.json`);
   try {
+    const stat = fs.statSync(filePath);
+    const cached = translationCache.get(filePath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.value;
+    }
     const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as Record<string, string>;
+    const value = JSON.parse(content) as Record<string, string>;
+    translationCache.set(filePath, { mtimeMs: stat.mtimeMs, value });
+    return value;
   } catch {
-    // Return empty map — the | t filter will fall back to English or the raw key
+    // Drop any stale cache entry; let the | t filter fall back to English / raw key
+    translationCache.delete(filePath);
     return {};
   }
+}
+
+/** Test-only hook for resetting translation cache. */
+export function _resetTranslationCacheForTests(): void {
+  translationCache.clear();
 }
 
 /**
@@ -28,12 +56,13 @@ function loadTranslations(locale: string): Record<string, string> {
  */
 function createEnvironment(locale: string): nunjucks.Environment {
   const env = new nunjucks.Environment(
-    new nunjucks.FileSystemLoader(TEMPLATES_DIR, { noCache: true }),
+    new nunjucks.FileSystemLoader(templatesDir(), { noCache: true }),
     { autoescape: true, trimBlocks: true, lstripBlocks: true },
   );
 
   const translations = loadTranslations(locale);
-  const englishFallback = loadTranslations('en');
+  // Avoid a duplicate read when the active locale is already English
+  const englishFallback = locale === 'en' ? translations : loadTranslations('en');
 
   // -------------------------------------------------------------------------
   // Filter: | t
@@ -56,30 +85,75 @@ function createEnvironment(locale: string): nunjucks.Environment {
   //
   // Usage in template:
   //   {{ computed.patientId | barcode('code128', 40) }}
-  //   {{ computed.patientId | barcode('qrcode', 80) }}
+  //   {{ computed.patientId | barcode('pdf417', 40) }}
   //
   // 'type' must be a valid bwip-js bcid string.
-  // Mark as safe (second arg true) so Nunjucks does not escape the HTML.
+  //
+  // Implementation note: bwip-js v3's PNG output uses zlib streams
+  // and is therefore asynchronous, so this is registered as an async
+  // Nunjucks filter and `render()` returns a Promise.
   // -------------------------------------------------------------------------
   env.addFilter(
     'barcode',
-    (value: string, type: string = 'code128', height: number = 40): string => {
+    (
+      value: string,
+      typeOrCallback: string | BarcodeCallback,
+      heightOrCallback?: number | BarcodeCallback,
+      maybeCallback?: BarcodeCallback,
+    ) => {
+      // Resolve variadic args (Nunjucks always appends the callback last)
+      let type: string = 'code128';
+      let height: number = 40;
+      let callback: BarcodeCallback;
+
+      if (typeof typeOrCallback === 'function') {
+        callback = typeOrCallback;
+      } else if (typeof heightOrCallback === 'function') {
+        type = typeOrCallback;
+        callback = heightOrCallback;
+      } else if (typeof maybeCallback === 'function') {
+        type = typeOrCallback;
+        height = heightOrCallback as number;
+        callback = maybeCallback;
+      } else {
+        // Should never happen — Nunjucks always supplies a callback for async filters
+        return;
+      }
+
+      const fallback = new nunjucks.runtime.SafeString(
+        `<span class="barcode-fallback">${value}</span>`,
+      );
+
       try {
-        const png = bwipjs.toBuffer({
-          bcid: type,
-          text: String(value),
-          height,
-          includetext: true,
-          textxalign: 'center',
-        });
-        const base64 = png.toString('base64');
-        return `<img src="data:image/png;base64,${base64}" alt="${value}" style="display:block;" />`;
+        bwipjs.toBuffer(
+          {
+            bcid: type,
+            text: String(value),
+            height,
+            includetext: true,
+            textxalign: 'center',
+          },
+          (err: Error | string | null, png: Buffer) => {
+            if (err || !png) {
+              console.error('[Renderer] Barcode generation failed:', err);
+              callback(null, fallback);
+              return;
+            }
+            const base64 = png.toString('base64');
+            callback(
+              null,
+              new nunjucks.runtime.SafeString(
+                `<img src="data:image/png;base64,${base64}" alt="${value}" style="display:block;" />`,
+              ),
+            );
+          },
+        );
       } catch (err) {
         console.error('[Renderer] Barcode generation failed:', err);
-        return `<span class="barcode-fallback">${value}</span>`;
+        callback(null, fallback);
       }
     },
-    true, // mark output as safe HTML
+    true,
   );
 
   // -------------------------------------------------------------------------
@@ -91,7 +165,8 @@ function createEnvironment(locale: string): nunjucks.Environment {
   // -------------------------------------------------------------------------
   env.addFilter(
     'qrcode',
-    (value: string, size: number = 120): string => {
+    (value: string, size: number = 120): nunjucks.runtime.SafeString => {
+      if (!value) return new nunjucks.runtime.SafeString('');
       try {
         const qr = new QRCodeSVG({
           content: String(value),
@@ -101,13 +176,14 @@ function createEnvironment(locale: string): nunjucks.Environment {
           join: true,
           pretty: false,
         });
-        return qr.svg();
+        // Strip the XML declaration — it breaks inline SVG rendering in HTML
+        const svg = qr.svg().replace(/^<\?xml[^?]*\?>\s*/, '');
+        return new nunjucks.runtime.SafeString(svg);
       } catch (err) {
         console.error('[Renderer] QR code generation failed:', err);
-        return `<span>${value}</span>`;
+        return new nunjucks.runtime.SafeString(`<span class="qrcode-fallback">${value}</span>`);
       }
     },
-    true,
   );
 
   // -------------------------------------------------------------------------
@@ -176,6 +252,10 @@ function createEnvironment(locale: string): nunjucks.Environment {
 /**
  * Renders a Nunjucks template with the given data and returns the HTML string.
  *
+ * Async because the `| barcode` filter is async (bwip-js PNG output uses
+ * zlib streams). All other filters are synchronous; templates that don't
+ * use `| barcode` still resolve on the next tick.
+ *
  * @param templatePath  Relative path to template.html (e.g. "prescription/template.html")
  * @param computed      The computed fields object from computedRunner
  * @param sources       Raw resolved sources (available in template as {{ sources.X }})
@@ -189,15 +269,24 @@ export function render(
   sources: Record<string, unknown>,
   locale: string,
   config: Record<string, unknown>,
-): string {
+): Promise<string> {
   const env = createEnvironment(locale);
 
-  return env.render(templatePath, {
-    computed,   // declarative computed fields (data-config.json)
-    compute,    // compute.js results
-    sources,    // raw fetched data
-    locale,
-    config,
-    now: new Date(),
+  return new Promise((resolve, reject) => {
+    env.render(
+      templatePath,
+      {
+        computed,   // declarative computed fields (data-config.json)
+        compute,    // compute.js results
+        sources,    // raw fetched data
+        locale,
+        config,
+        now: new Date(),
+      },
+      (err, html) => {
+        if (err) reject(err);
+        else resolve(html ?? '');
+      },
+    );
   });
 }

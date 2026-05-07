@@ -18,7 +18,7 @@ export interface TemplateEntry {
   name: string;
   folder: string;
   category: string; // e.g. "medications", "patientRegistration"
-  outputFormats: Array<'html' | 'pdf'>;
+  outputFormats: Array<'html'>;
   triggers: Array<{
     label: string;    // e.g. "Print Prescription"
   }>;
@@ -119,7 +119,7 @@ export interface LoadedTemplate {
 
 export interface RenderRequest {
   templateId: string;
-  format?: 'html' | 'pdf';
+  format?: 'html';
   locale?: string;
   /** Identifiers used to fetch data from OpenMRS (patientUuid, visitUuid, etc.) */
   context?: Record<string, string>;

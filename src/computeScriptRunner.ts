@@ -6,6 +6,7 @@ import { ResolvedSources } from './types';
 const OPENMRS_URL = process.env.OPENMRS_URL ?? 'http://openmrs:8080';
 const FHIR_BASE = `${OPENMRS_URL}/openmrs/ws/fhir2/R4`;
 const REST_BASE = `${OPENMRS_URL}/openmrs/ws/rest/v1`;
+const REQUEST_TIMEOUT_MS = parseInt(process.env.OPENMRS_TIMEOUT_MS ?? '10000', 10);
 
 interface AuthHeaders {
   cookie?: string;
@@ -33,7 +34,7 @@ function buildOpenmrsClient(auth: AuthHeaders) {
 
   const get = async (url: string, params?: Record<string, string>) => {
     try {
-      const res = await axios.get(url, { headers, params });
+      const res = await axios.get(url, { headers, params, timeout: REQUEST_TIMEOUT_MS });
       return res.data;
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -44,6 +45,9 @@ function buildOpenmrsClient(auth: AuthHeaders) {
         }
         if (status === 401) throw new Error('OpenMRS session expired. Please log in again.');
         if (status === 404) return EMPTY_BUNDLE;
+        if (!err.response && err.code === 'ECONNABORTED') {
+          throw new Error(`OpenMRS API timeout (>${REQUEST_TIMEOUT_MS}ms) at ${url}`);
+        }
       }
       throw err;
     }
