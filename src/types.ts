@@ -17,9 +17,9 @@ export interface TemplateEntry {
   id: string;
   name: string;
   folder: string;
+  category: string; // e.g. "medications", "patientRegistration"
   outputFormats: Array<'html' | 'pdf'>;
   triggers: Array<{
-    context: string;  // e.g. "medications", "patientRegistration"
     label: string;    // e.g. "Print Prescription"
   }>;
   config?: Record<string, unknown>;
@@ -106,6 +106,8 @@ export interface LoadedTemplate {
   dataConfig: DataConfig;
   /** Path relative to TEMPLATES_DIR, e.g. "prescription/template.html" */
   templatePath: string;
+  /** Absolute path to compute.js if present in the template folder */
+  computeScriptPath?: string;
   config: Record<string, unknown>;
   triggers: TemplateEntry['triggers'];
   outputFormats: TemplateEntry['outputFormats'];

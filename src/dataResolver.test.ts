@@ -15,13 +15,13 @@ describe('resolve', () => {
 
   it('uses passthrough mode when no sources declared', async () => {
     const callerData = { patient: { name: 'Test' } };
-    const result = await resolve({}, undefined, callerData, undefined);
+    const result = await resolve({}, undefined, callerData, {});
     expect(result).toEqual(callerData);
     expect(axios.get).not.toHaveBeenCalled();
   });
 
   it('returns empty object when no sources and no data', async () => {
-    const result = await resolve({}, undefined, undefined, undefined);
+    const result = await resolve({}, undefined, undefined, {});
     expect(result).toEqual({});
     expect(axios.get).not.toHaveBeenCalled();
   });
@@ -36,12 +36,12 @@ describe('resolve', () => {
         },
       },
     };
-    const result = await resolve(dataConfig, { patientUuid: 'abc' }, undefined, undefined);
+    const result = await resolve(dataConfig, { patientUuid: 'abc' }, undefined, {});
     expect(result['patient']).toEqual({ resourceType: 'Patient', id: 'p1' });
     expect(axios.get).toHaveBeenCalledTimes(1);
   });
 
-  it('forwards Cookie header to OpenMRS in fetch mode', async () => {
+  it('forwards x-openmrs-authorization as Authorization header', async () => {
     const dataConfig = {
       sources: {
         patient: {
@@ -51,7 +51,45 @@ describe('resolve', () => {
         },
       },
     };
-    await resolve(dataConfig, { patientUuid: 'abc' }, undefined, 'JSESSIONID=xyz123');
+    await resolve(dataConfig, { patientUuid: 'abc' }, undefined, { authorization: 'Basic dXNlcjpwYXNz' });
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Basic dXNlcjpwYXNz' }),
+      }),
+    );
+  });
+
+  it('forwards x-openmrs-session-id as JSESSIONID cookie when no authorization', async () => {
+    const dataConfig = {
+      sources: {
+        patient: {
+          api: 'fhir' as const,
+          resource: 'Patient',
+          params: { id: '{{patientUuid}}' },
+        },
+      },
+    };
+    await resolve(dataConfig, { patientUuid: 'abc' }, undefined, { sessionId: '3F4B33C73C129796C8DE1B8BC7881827' });
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Cookie: 'JSESSIONID=3F4B33C73C129796C8DE1B8BC7881827' }),
+      }),
+    );
+  });
+
+  it('falls back to raw cookie when no authorization or sessionId', async () => {
+    const dataConfig = {
+      sources: {
+        patient: {
+          api: 'fhir' as const,
+          resource: 'Patient',
+          params: { id: '{{patientUuid}}' },
+        },
+      },
+    };
+    await resolve(dataConfig, { patientUuid: 'abc' }, undefined, { cookie: 'JSESSIONID=xyz123' });
     expect(axios.get).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -71,7 +109,7 @@ describe('resolve', () => {
       },
     };
     const callerData = { customField: 'overrideValue' };
-    const result = await resolve(dataConfig, { patientUuid: 'abc' }, callerData, undefined);
+    const result = await resolve(dataConfig, { patientUuid: 'abc' }, callerData, {});
     // Caller data wins on key conflicts
     expect(result['customField']).toBe('overrideValue');
     // Fetched data also present
@@ -89,7 +127,7 @@ describe('resolve', () => {
       },
     };
     await expect(
-      resolve(dataConfig, {}, undefined, undefined),
+      resolve(dataConfig, {}, undefined, {}),
     ).rejects.toThrow('Missing context variable');
   });
 
@@ -109,7 +147,7 @@ describe('resolve', () => {
       },
     };
     await expect(
-      resolve(dataConfig, { patientUuid: 'abc' }, undefined, undefined),
+      resolve(dataConfig, { patientUuid: 'abc' }, undefined, {}),
     ).rejects.toThrow('session expired');
   });
 });

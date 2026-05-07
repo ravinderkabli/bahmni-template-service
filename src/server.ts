@@ -4,6 +4,7 @@ import express, { Request, Response } from 'express';
 import { templateStore } from './templateStore';
 import { resolve } from './dataResolver';
 import { runComputed } from './computedRunner';
+import { runComputeScript } from './computeScriptRunner';
 import { render } from './renderer';
 import { toHtml } from './adapters/htmlAdapter';
 // import { initBrowser, htmlToPdf, closeBrowser } from './adapters/pdfAdapter'; // PDF support disabled
@@ -25,6 +26,7 @@ app.get(
     const templates = templateStore.list().map((t) => ({
       id: t.id,
       name: t.name,
+      category:t.category,
       triggers: t.triggers,
       outputFormats: t.outputFormats,
     }));
@@ -46,6 +48,16 @@ app.post(
       context,
       data,
     } = req.body as RenderRequest;
+
+    // Log incoming session credentials for debugging
+    const authHeader = req.headers['x-openmrs-authorization'] as string | undefined;
+    console.log('[Server] Incoming session headers:', {
+      cookie: req.headers.cookie ?? '(none)',
+      'x-openmrs-session-id': req.headers['x-openmrs-session-id'] ?? '(none)',
+      'x-openmrs-authorization': authHeader
+        ? `${authHeader.split(' ')[0]} (present)`
+        : '(none)',
+    });
 
     // --- Validate required fields ---
     if (!templateId) {
@@ -75,21 +87,38 @@ app.post(
     }
 
     try {
+      console.log('[Server] Template loaded:', { id: template.id, computeScriptPath: template.computeScriptPath, sources: Object.keys(template.dataConfig.sources ?? {}), context });
+
       // Step 1: Resolve data sources (passthrough / fetch / hybrid)
       const sources = await resolve(
         template.dataConfig,
         context,
         data,
-        req.headers.cookie,
+        {
+          cookie: req.headers.cookie,
+          sessionId: req.headers['x-openmrs-session-id'] as string | undefined,
+          authorization: req.headers['x-openmrs-authorization'] as string | undefined,
+        },
       );
 
       // Step 2: Run declarative computed fields
       const computed = runComputed(template.dataConfig.computed, sources);
 
+      // Step 2b: Run compute.js if present in the template folder
+      const auth = {
+        cookie: req.headers.cookie,
+        sessionId: req.headers['x-openmrs-session-id'] as string | undefined,
+        authorization: req.headers['x-openmrs-authorization'] as string | undefined,
+      };
+      const compute = template.computeScriptPath
+        ? await runComputeScript(template.computeScriptPath, sources, context, auth)
+        : {};
+
       // Step 3: Render Nunjucks template to HTML
       const html = render(
         template.templatePath,
         computed,
+        compute,
         sources,
         locale,
         template.config,
@@ -162,9 +191,8 @@ async function start(): Promise<void> {
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
+process.on('SIGTERM', () => {
   console.log('[Server] Shutting down...');
-  await closeBrowser();
   process.exit(0);
 });
 

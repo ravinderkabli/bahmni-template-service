@@ -11,18 +11,11 @@ import { evaluateFhirPath } from './builtins/fhirPath';
 const TEMPLATES_DIR =
   process.env.TEMPLATES_DIR ?? '/etc/bahmni_config/print-templates';
 
-// Cache i18n JSON files to avoid re-reading on every request
-const i18nCache = new Map<string, Record<string, string>>();
-
 function loadTranslations(locale: string): Record<string, string> {
-  if (i18nCache.has(locale)) return i18nCache.get(locale)!;
-
   const filePath = path.join(TEMPLATES_DIR, '_i18n', `${locale}.json`);
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const translations = JSON.parse(content) as Record<string, string>;
-    i18nCache.set(locale, translations);
-    return translations;
+    return JSON.parse(content) as Record<string, string>;
   } catch {
     // Return empty map — the | t filter will fall back to English or the raw key
     return {};
@@ -192,6 +185,7 @@ function createEnvironment(locale: string): nunjucks.Environment {
 export function render(
   templatePath: string,
   computed: Record<string, unknown>,
+  compute: Record<string, unknown>,
   sources: Record<string, unknown>,
   locale: string,
   config: Record<string, unknown>,
@@ -199,10 +193,11 @@ export function render(
   const env = createEnvironment(locale);
 
   return env.render(templatePath, {
-    computed,   // all declarative computed fields
-    sources,    // raw fetched data (rarely needed in templates)
-    locale,     // current locale string
-    config,     // static config from templates.json entry
-    now: new Date(), // current date/time
+    computed,   // declarative computed fields (data-config.json)
+    compute,    // compute.js results
+    sources,    // raw fetched data
+    locale,
+    config,
+    now: new Date(),
   });
 }

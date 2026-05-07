@@ -44,16 +44,7 @@ class TemplateStore {
 
     const templateDir = path.join(TEMPLATES_DIR, entry.folder);
 
-    // Validate data-config.json exists
-    const dataConfigPath = path.join(templateDir, 'data-config.json');
-    if (!fs.existsSync(dataConfigPath)) {
-      console.error(
-        `[TemplateStore] Missing data-config.json for template: ${templateId}`,
-      );
-      return null;
-    }
-
-    // Validate template.html exists
+    // Validate template.html exists — the only required file
     const templateHtmlPath = path.join(templateDir, 'template.html');
     if (!fs.existsSync(templateHtmlPath)) {
       console.error(
@@ -62,19 +53,24 @@ class TemplateStore {
       return null;
     }
 
-    const dataConfig: DataConfig = JSON.parse(
-      fs.readFileSync(dataConfigPath, 'utf-8'),
-    );
+    // data-config.json is optional — if absent, no API sources are fetched
+    const dataConfigPath = path.join(templateDir, 'data-config.json');
+    const dataConfig: DataConfig = fs.existsSync(dataConfigPath)
+      ? JSON.parse(fs.readFileSync(dataConfigPath, 'utf-8'))
+      : {};
 
     // templatePath is relative to TEMPLATES_DIR because Nunjucks
     // FileSystemLoader is rooted at TEMPLATES_DIR
     const templatePath = path.join(entry.folder, 'template.html');
+
+    const computeScriptPath = path.join(templateDir, 'compute.js');
 
     return {
       id: entry.id,
       name: entry.name,
       dataConfig,
       templatePath,
+      computeScriptPath: fs.existsSync(computeScriptPath) ? computeScriptPath : undefined,
       config: entry.config ?? {},
       triggers: entry.triggers ?? [],
       outputFormats: entry.outputFormats ?? ['html'],
