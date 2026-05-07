@@ -39,7 +39,14 @@ describe('templateStore', () => {
         registryPath,
         JSON.stringify({
           templates: [
-            { id: 'A', name: 'A', folder: 'a', category: 'x', outputFormats: ['html'], triggers: [] },
+            {
+              id: 'A',
+              name: 'A',
+              folder: 'a',
+              category: 'x',
+              outputFormats: ['html'],
+              triggers: [],
+            },
           ],
         }),
       );
@@ -47,13 +54,11 @@ describe('templateStore', () => {
       const first = templateStore.list();
       expect(first).toHaveLength(1);
 
-      // Spy after the priming read so we can count subsequent reads.
       const readSpy = jest.spyOn(fs, 'readFileSync');
 
       const second = templateStore.list();
       expect(second).toHaveLength(1);
-      // Second call must NOT have triggered another readFileSync
-      expect(readSpy.mock.calls.length).toBe(0);
+      expect(readSpy.mock.calls).toHaveLength(0);
 
       readSpy.mockRestore();
     } finally {
@@ -69,7 +74,14 @@ describe('templateStore', () => {
         registryPath,
         JSON.stringify({
           templates: [
-            { id: 'A', name: 'A', folder: 'a', category: 'x', outputFormats: ['html'], triggers: [] },
+            {
+              id: 'A',
+              name: 'A',
+              folder: 'a',
+              category: 'x',
+              outputFormats: ['html'],
+              triggers: [],
+            },
           ],
         }),
       );
@@ -80,12 +92,25 @@ describe('templateStore', () => {
         registryPath,
         JSON.stringify({
           templates: [
-            { id: 'A', name: 'A', folder: 'a', category: 'x', outputFormats: ['html'], triggers: [] },
-            { id: 'B', name: 'B', folder: 'b', category: 'y', outputFormats: ['html'], triggers: [] },
+            {
+              id: 'A',
+              name: 'A',
+              folder: 'a',
+              category: 'x',
+              outputFormats: ['html'],
+              triggers: [],
+            },
+            {
+              id: 'B',
+              name: 'B',
+              folder: 'b',
+              category: 'y',
+              outputFormats: ['html'],
+              triggers: [],
+            },
           ],
         }),
       );
-      // Force a clearly-newer mtime (whole-second granularity safe)
       const future = new Date(Date.now() + 2000);
       fs.utimesSync(registryPath, future, future);
 
@@ -145,12 +170,18 @@ describe('templateStore', () => {
         path.join(t.dir, 'templates.json'),
         JSON.stringify({
           templates: [
-            { id: 'A', name: 'A', folder: 'a', category: 'x', outputFormats: ['html'], triggers: [] },
+            {
+              id: 'A',
+              name: 'A',
+              folder: 'a',
+              category: 'x',
+              outputFormats: ['html'],
+              triggers: [],
+            },
           ],
         }),
       );
       fs.mkdirSync(path.join(t.dir, 'a'));
-      // no template.html
 
       expect(templateStore.get('A')).toBeNull();
     } finally {

@@ -30,7 +30,6 @@ describe('computeAge', () => {
 
 describe('computeBmi', () => {
   it('calculates BMI correctly', () => {
-    // 70 kg, 175 cm → BMI = 70 / (1.75 * 1.75) = 22.9
     expect(computeBmi(70, 175)).toBe('22.9');
   });
 
@@ -72,7 +71,16 @@ describe('computeLos', () => {
 describe('isAbnormal', () => {
   it('returns true for High interpretation', () => {
     const obs = {
-      interpretation: [{ coding: [{ code: 'H', system: 'http://hl7.org/fhir/v3/ObservationInterpretation' }] }],
+      interpretation: [
+        {
+          coding: [
+            {
+              code: 'H',
+              system: 'http://hl7.org/fhir/v3/ObservationInterpretation',
+            },
+          ],
+        },
+      ],
     };
     expect(isAbnormal(obs)).toBe(true);
   });

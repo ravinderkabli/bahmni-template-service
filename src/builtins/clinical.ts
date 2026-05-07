@@ -1,14 +1,3 @@
-// src/builtins/clinical.ts
-
-/**
- * Computes a human-readable age string from an ISO 8601 date string.
- *
- * Returns:
- *   "32 years"  for adults
- *   "8 months"  for infants under 2 years
- *   "14 days"   for neonates under 1 month
- *   ""          if birthDate is null or invalid
- */
 export function computeAge(birthDate: string | null | undefined): string {
   if (!birthDate) return '';
 
@@ -17,8 +6,7 @@ export function computeAge(birthDate: string | null | undefined): string {
 
   const now = new Date();
   const years = now.getFullYear() - birth.getFullYear();
-  const months =
-    years * 12 + (now.getMonth() - birth.getMonth());
+  const months = years * 12 + (now.getMonth() - birth.getMonth());
   const days = Math.floor(
     (now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24),
   );
@@ -28,11 +16,6 @@ export function computeAge(birthDate: string | null | undefined): string {
   return `${years} year${years !== 1 ? 's' : ''}`;
 }
 
-/**
- * Computes BMI from weight in kilograms and height in centimetres.
- * Returns a string formatted to 1 decimal place (e.g. "24.3").
- * Returns "" if either input is missing or invalid.
- */
 export function computeBmi(
   weightKg: number | null | undefined,
   heightCm: number | null | undefined,
@@ -43,16 +26,6 @@ export function computeBmi(
   return bmi.toFixed(1);
 }
 
-/**
- * Computes length of stay between two ISO 8601 datetime strings.
- *
- * Returns a human-readable string such as:
- *   "3 days 4 hours"
- *   "12 hours"
- *   "45 minutes"
- *
- * If dischargeDate is omitted, uses the current time.
- */
 export function computeLos(
   admissionDate: string | null | undefined,
   dischargeDate?: string | null,
@@ -80,17 +53,6 @@ export function computeLos(
   return parts.join(' ') || '< 1 minute';
 }
 
-/**
- * Returns true if a FHIR Observation resource has an abnormal interpretation.
- *
- * Abnormal codes per FHIR spec:
- *   H  = High
- *   L  = Low
- *   HH = Critical High
- *   LL = Critical Low
- *   A  = Abnormal
- *   AA = Critical Abnormal
- */
 export function isAbnormal(observation: unknown): boolean {
   if (observation == null || typeof observation !== 'object') return false;
 

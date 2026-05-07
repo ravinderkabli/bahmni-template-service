@@ -3,14 +3,10 @@ import os from 'os';
 import path from 'path';
 import { render, _resetTranslationCacheForTests } from './renderer';
 
-/**
- * Sets up a temp templates dir with a single inline template, points
- * TEMPLATES_DIR at it, and returns a cleanup function. Used to drive
- * the renderer end-to-end without needing the real standard-config tree.
- */
-function withTempTemplates(
-  files: Record<string, string>,
-): { dir: string; cleanup: () => void } {
+function withTempTemplates(files: Record<string, string>): {
+  dir: string;
+  cleanup: () => void;
+} {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tmpl-'));
   for (const [rel, content] of Object.entries(files)) {
     const full = path.join(dir, rel);
@@ -47,8 +43,6 @@ describe('renderer', () => {
         const m = html.match(/base64,([A-Za-z0-9+/=]+)"/);
         expect(m).not.toBeNull();
         const b64 = m![1];
-        // Must be a real PNG (starts with PNG signature 0x89 50 4E 47),
-        // not a base64 of "[object Promise]" which would start with "W29ia".
         const buf = Buffer.from(b64, 'base64');
         expect(buf[0]).toBe(0x89);
         expect(buf[1]).toBe(0x50);
@@ -87,8 +81,6 @@ describe('renderer', () => {
         const first = await render('demo/template.html', {}, 'en', {});
         expect(first.trim()).toBe('Hi');
 
-        // Bump mtime forward by 2s so the cache invalidates even on
-        // filesystems with whole-second mtime resolution.
         const newPath = path.join(t.dir, '_i18n', 'en.json');
         fs.writeFileSync(newPath, JSON.stringify({ HELLO: 'Howdy' }));
         const future = new Date(Date.now() + 2000);
