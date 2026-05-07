@@ -253,20 +253,16 @@ function createEnvironment(locale: string): nunjucks.Environment {
  * Renders a Nunjucks template with the given data and returns the HTML string.
  *
  * Async because the `| barcode` filter is async (bwip-js PNG output uses
- * zlib streams). All other filters are synchronous; templates that don't
- * use `| barcode` still resolve on the next tick.
+ * zlib streams). Templates that don't use `| barcode` still resolve on the next tick.
  *
- * @param templatePath  Relative path to template.html (e.g. "prescription/template.html")
- * @param computed      The computed fields object from computedRunner
- * @param sources       Raw resolved sources (available in template as {{ sources.X }})
+ * @param templatePath  Relative path to template.html (e.g. "registration-card/template.html")
+ * @param compute       Return value of compute.js (available in template as {{ compute.* }})
  * @param locale        BCP 47 language tag (e.g. "en", "fr", "hi")
  * @param config        Static config values from templates.json (facility name, etc.)
  */
 export function render(
   templatePath: string,
-  computed: Record<string, unknown>,
   compute: Record<string, unknown>,
-  sources: Record<string, unknown>,
   locale: string,
   config: Record<string, unknown>,
 ): Promise<string> {
@@ -276,9 +272,7 @@ export function render(
     env.render(
       templatePath,
       {
-        computed,   // declarative computed fields (data-config.json)
-        compute,    // compute.js results
-        sources,    // raw fetched data
+        compute,
         locale,
         config,
         now: new Date(),

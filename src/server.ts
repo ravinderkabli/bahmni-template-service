@@ -2,8 +2,6 @@
 
 import express, { Request, Response } from 'express';
 import { templateStore } from './templateStore';
-import { resolve } from './dataResolver';
-import { runComputed } from './computedRunner';
 import { runComputeScript } from './computeScriptRunner';
 import { render } from './renderer';
 import { toHtml } from './adapters/htmlAdapter';
@@ -11,8 +9,7 @@ import { RenderRequest, ErrorResponse } from './types';
 
 const app = express();
 
-// Parse JSON request bodies up to 10MB (for passthrough/hybrid mode with large data)
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 
 const DEBUG = (process.env.LOG_LEVEL ?? '').toLowerCase() === 'debug';
 
@@ -61,7 +58,6 @@ app.post(
       format = 'html',
       locale = 'en',
       context,
-      data,
     } = req.body as RenderRequest;
 
     if (DEBUG) {
@@ -104,28 +100,19 @@ app.post(
       console.log('[Server] Render', {
         id: template.id,
         hasComputeScript: !!template.computeScriptPath,
-        sources: Object.keys(template.dataConfig.sources ?? {}),
       });
 
       const auth = buildAuthHeaders(req);
 
-      // Step 1: Resolve data sources (passthrough / fetch / hybrid)
-      const sources = await resolve(template.dataConfig, context, data, auth);
-
-      // Step 2: Run declarative computed fields
-      const computed = runComputed(template.dataConfig.computed, sources);
-
-      // Step 2b: Run compute.js if present in the template folder
+      // Run compute.js if present — it fetches and transforms all data
       const compute = template.computeScriptPath
-        ? await runComputeScript(template.computeScriptPath, sources, context, auth)
+        ? await runComputeScript(template.computeScriptPath, context, auth)
         : {};
 
-      // Step 3: Render Nunjucks template to HTML
+      // Render Nunjucks template to HTML
       const html = await render(
         template.templatePath,
-        computed,
         compute,
-        sources,
         locale,
         template.config,
       );
@@ -140,11 +127,7 @@ app.post(
       console.error(`[Server] Render error for "${templateId}":`, message);
 
       // Map error types to HTTP status codes
-      if (
-        message.includes('Missing context variable') ||
-        message.includes('Unknown source') ||
-        message.includes('Invalid format')
-      ) {
+      if (message.includes('Invalid format')) {
         return res.status(400).json({ error: message } satisfies ErrorResponse);
       }
 

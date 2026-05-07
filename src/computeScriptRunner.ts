@@ -1,7 +1,6 @@
 // src/computeScriptRunner.ts
 
 import axios from 'axios';
-import { ResolvedSources } from './types';
 
 const OPENMRS_URL = process.env.OPENMRS_URL ?? 'http://openmrs:8080';
 const FHIR_BASE = `${OPENMRS_URL}/openmrs/ws/fhir2/R4`;
@@ -66,8 +65,7 @@ function buildOpenmrsClient(auth: AuthHeaders) {
  *
  * Contract for compute.js:
  *   module.exports = {
- *     compute: async function(sources, { context, openmrs }) {
- *       // sources  — data already fetched via data-config.json (empty if no data-config)
+ *     compute: async function({ context, openmrs }) {
  *       // context  — { patientUuid, visitUuid, ... } from the render request
  *       // openmrs  — pre-authenticated client: openmrs.fhir(resource, params)
  *       //                                       openmrs.rest(endpoint, params)
@@ -77,7 +75,6 @@ function buildOpenmrsClient(auth: AuthHeaders) {
  */
 export async function runComputeScript(
   scriptPath: string,
-  sources: ResolvedSources,
   context: Record<string, string> | undefined,
   auth: AuthHeaders,
 ): Promise<Record<string, unknown>> {
@@ -86,7 +83,7 @@ export async function runComputeScript(
     delete require.cache[require.resolve(scriptPath)];
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require(scriptPath) as {
-      compute?: (sources: ResolvedSources, helpers: { context: Record<string, string> | undefined; openmrs: ReturnType<typeof buildOpenmrsClient> }) => unknown;
+      compute?: (helpers: { context: Record<string, string> | undefined; openmrs: ReturnType<typeof buildOpenmrsClient> }) => unknown;
     };
 
     if (typeof mod.compute !== 'function') {
@@ -97,7 +94,7 @@ export async function runComputeScript(
     }
 
     const openmrs = buildOpenmrsClient(auth);
-    const result = await Promise.resolve(mod.compute(sources, { context, openmrs }));
+    const result = await Promise.resolve(mod.compute({ context, openmrs }));
 
     if (result == null || typeof result !== 'object' || Array.isArray(result)) {
       console.warn(

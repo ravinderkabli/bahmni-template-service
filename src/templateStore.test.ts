@@ -108,7 +108,7 @@ describe('templateStore', () => {
     }
   });
 
-  it('loads a template with optional data-config.json', () => {
+  it('loads a template with template.html', () => {
     const t = setupTemplatesDir();
     try {
       fs.writeFileSync(
@@ -128,14 +128,10 @@ describe('templateStore', () => {
       );
       fs.mkdirSync(path.join(t.dir, 'rx'));
       fs.writeFileSync(path.join(t.dir, 'rx', 'template.html'), '<p>ok</p>');
-      fs.writeFileSync(
-        path.join(t.dir, 'rx', 'data-config.json'),
-        JSON.stringify({ sources: { patient: { api: 'fhir', resource: 'Patient' } } }),
-      );
 
       const loaded = templateStore.get('PRESCRIPTION');
       expect(loaded).not.toBeNull();
-      expect(loaded!.dataConfig.sources?.['patient']?.resource).toBe('Patient');
+      expect(loaded!.templatePath).toBe('rx/template.html');
       expect(loaded!.computeScriptPath).toBeUndefined();
     } finally {
       t.cleanup();
