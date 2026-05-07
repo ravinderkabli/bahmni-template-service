@@ -130,7 +130,7 @@ app.get('/template-service/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const PORT = parseInt(process.env.PORT ?? '8080', 10);
 
 async function start(): Promise<void> {
   app.listen(PORT, () => {
